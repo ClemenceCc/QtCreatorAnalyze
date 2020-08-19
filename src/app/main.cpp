@@ -203,14 +203,18 @@ int main(int argc, char **argv)
     setrlimit(RLIMIT_NOFILE, &rl);
 #endif
 
+    ///< 只允许单个程序运行
     SharedTools::QtSingleApplication app((QLatin1String(appNameC)), argc, argv);
+
     // Load
     ExtensionSystem::PluginManager pluginManager;
     pluginManager.setFileExtension(QLatin1String("pluginspec"));
 
+    ///< 设置插件路径
     const QStringList pluginPaths = getPluginPaths();
     pluginManager.setPluginPaths(pluginPaths);
 
+    ///< 命令参数
     const QStringList arguments = app.arguments();
     QMap<QString, QString> foundAppOptions;
     if (arguments.size() > 1) {
@@ -232,6 +236,7 @@ int main(int argc, char **argv)
         }
     }
 
+    ///< 查找加载core
     const PluginSpecSet plugins = pluginManager.plugins();
     ExtensionSystem::PluginSpec *coreplugin = 0;
     foreach (ExtensionSystem::PluginSpec *spec, plugins) {
@@ -249,10 +254,14 @@ int main(int argc, char **argv)
         displayError(msgCoreLoadFailure(coreplugin->errorString()));
         return 1;
     }
+
+    ///< 命令参数 - 版本
     if (foundAppOptions.contains(QLatin1String(VERSION_OPTION))) {
         printVersion(coreplugin, pluginManager);
         return 0;
     }
+
+    ///< 命令参数 - 帮助
     if (foundAppOptions.contains(QLatin1String(HELP_OPTION1))
             || foundAppOptions.contains(QLatin1String(HELP_OPTION2))
             || foundAppOptions.contains(QLatin1String(HELP_OPTION3))
@@ -261,6 +270,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
+    ///< 多次运行
     const bool isFirstInstance = !app.isRunning();
     if (!isFirstInstance && foundAppOptions.contains(QLatin1String(CLIENT_OPTION)))
         return sendArguments(app, pluginManager.arguments()) ? 0 : -1;
@@ -270,6 +280,7 @@ int main(int argc, char **argv)
         displayError(msgCoreLoadFailure(coreplugin->errorString()));
         return 1;
     }
+    ///< 第一次运行
     if (isFirstInstance) {
         // Set up lock and remote arguments for the first instance only.
         // Silently fallback to unconnected instances for any subsequent
