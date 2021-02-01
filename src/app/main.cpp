@@ -280,7 +280,7 @@ int main(int argc, char **argv)
         displayError(msgCoreLoadFailure(coreplugin->errorString()));
         return 1;
     }
-    ///< 第一次运行
+    ///< 检查是否是第一次
     if (isFirstInstance) {
         // Set up lock and remote arguments for the first instance only.
         // Silently fallback to unconnected instances for any subsequent

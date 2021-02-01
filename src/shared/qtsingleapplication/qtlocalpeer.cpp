@@ -51,13 +51,17 @@ const char *QtLocalPeer::ack = "ack";
 QtLocalPeer::QtLocalPeer(QObject *parent, const QString &appId)
     : QObject(parent), id(appId)
 {
+    ///< 实际路径作为id
     if (id.isEmpty())
         id = QCoreApplication::applicationFilePath();  //### On win, check if this returns .../argv[0] without casefolding; .\MYAPP == .\myapp on Win
 
+    ///< 32校验
     QByteArray idc = id.toUtf8();
     quint16 idNum = qChecksum(idc.constData(), idc.size());
     //### could do: two 16bit checksums over separate halves of id, for a 32bit result - improved uniqeness probability. Every-other-char split would be best.
 
+    ///< 组成 socketName
+    ///< socketName = "qtsingleapplication-" +  "32bit checkSum" + "-" + "uid"
     socketName = QLatin1String("qtsingleapplication-")
                  + QString::number(idNum, 16);
 #if defined(Q_OS_WIN)
@@ -75,6 +79,10 @@ QtLocalPeer::QtLocalPeer(QObject *parent, const QString &appId)
 #endif
 
     server = new QLocalServer(this);
+
+    ///< 组成lockName
+    ///< lockName = "暂时区/" + socketName + "-lockfile"
+
     QString lockName = QDir(QDir::tempPath()).absolutePath()
                        + QLatin1Char('/') + socketName
                        + QLatin1String("-lockfile");
@@ -84,28 +92,44 @@ QtLocalPeer::QtLocalPeer(QObject *parent, const QString &appId)
 
 bool QtLocalPeer::isClient()
 {
+    ///< 文件被锁 --> 非客户端:服务器
     if (lockFile.isLocked())
         return false;
 
+    ///< 文件不阻塞写锁 失败 --> 客户端
     if (!lockFile.lock(QtLockedFile::WriteLock, false))
         return true;
 
+    ///< 写锁成功
+
+
+    ///< 移除localServer
     if (!QLocalServer::removeServer(socketName))
         qWarning("QtSingleCoreApplication: could not cleanup socket");
+
+    ///< 重新建监听server
     bool res = server->listen(socketName);
     if (!res)
         qWarning("QtSingleCoreApplication: listen on local socket failed, %s", qPrintable(server->errorString()));
+
+    ///< 绑定新连接动作
     QObject::connect(server, SIGNAL(newConnection()), SLOT(receiveConnection()));
+
+    ///< 非客户端:服务器
     return false;
 }
 
 bool QtLocalPeer::sendMessage(const QString &message, int timeout)
 {
+    ///< 非客户端即服务器，不发送
     if (!isClient())
         return false;
 
+    ///< 客户端发送数据
     QLocalSocket socket;
     bool connOk = false;
+
+    ///< 连接两次避免刚刚启动未接受情况
     for (int i = 0; i < 2; i++) {
         // Try twice, in case the other instance is just starting up
         socket.connectToServer(socketName);
@@ -120,9 +144,12 @@ bool QtLocalPeer::sendMessage(const QString &message, int timeout)
         nanosleep(&ts, NULL);
 #endif
     }
+
+    ///< 连接服务器失败
     if (!connOk)
         return false;
 
+    ///< 发送数据
     QByteArray uMsg(message.toUtf8());
     QDataStream ds(&socket);
     ds.writeBytes(uMsg.constData(), uMsg.size());
@@ -134,23 +161,26 @@ bool QtLocalPeer::sendMessage(const QString &message, int timeout)
 
 void QtLocalPeer::receiveConnection()
 {
+    ///< 接受新连接
     QLocalSocket* socket = server->nextPendingConnection();
     if (!socket)
         return;
 
+
+    ///< 等待接受数据
     // Why doesn't Qt have a blocking stream that takes care of this shait???
     while (socket->bytesAvailable() < static_cast<int>(sizeof(quint32)))
         socket->waitForReadyRead();
     QDataStream ds(socket);
     QByteArray uMsg;
     quint32 remaining;
-    ds >> remaining;
+    ds >> remaining;///< 长度
     uMsg.resize(remaining);
     int got = 0;
     char* uMsgBuf = uMsg.data();
     //qDebug() << "RCV: remaining" << remaining;
     do {
-        got = ds.readRawData(uMsgBuf, remaining);
+        got = ds.readRawData(uMsgBuf, remaining);///< 单次接受
         remaining -= got;
         uMsgBuf += got;
         //qDebug() << "RCV: got" << got << "remaining" << remaining;
@@ -163,9 +193,11 @@ void QtLocalPeer::receiveConnection()
     }
     // ### async this
     QString message(QString::fromUtf8(uMsg));
+    ///< 回复ack
     socket->write(ack, qstrlen(ack));
     socket->waitForBytesWritten(1000);
     delete socket;
+    ///< 发送信号，接受到的信息
     emit messageReceived(message); // ##(might take a long time to return)
 }
 
